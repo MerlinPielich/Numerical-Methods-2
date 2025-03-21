@@ -3,7 +3,8 @@ import matplotlib.pyplot as plt
 from PIL import Image
 from scipy.sparse import diags
 from scipy.sparse.linalg import spsolve
-from skimage.data import shepp_logan_phantom
+from PIL import Image
+
 
 # Choose the image:
 gif_name = 'SL_simulated.gif'
@@ -40,16 +41,6 @@ if gif_name == 'SL_simulated.gif':
 
 ##############
 
-# Image setup: Use Shepp-Logan phantom as the ground truth image
-fm = shepp_logan_phantom()
-fm = fm / np.max(fm)  # Normalize the image to [0, 1]
-nx, ny = fm.shape
-
-# Noise setup
-sigma = 0.1
-np.random.seed(0)
-fn = fm + sigma * np.random.randn(nx, ny)  # Add noise
-
 # Fidelity parameter values
 lambdas = [1, 10, 100, 1000, 10000, 100000, 1000000, 10000000, 100000000]
 
@@ -59,8 +50,12 @@ h = 1.0 / nx
 # Prepare the solution vector (flattened version of the noisy image)
 phi = fn.flatten()
 
-# Loop over the values of lambda to compute the solutions
+# Store solutions for selected lambdas
 solutions = {}
+
+# Solve for each lambda, compute noise std
+sigma_lambda = []
+
 for lam in lambdas:
     # Construct the matrix A for the current lambda
     main_diag = np.zeros(nx * ny)
@@ -108,52 +103,46 @@ for lam in lambdas:
     offsets = [0, 1, -1, nx, -nx]
     A = diags(diagonals, offsets, shape=(nx * ny, nx * ny), format='csr')
 
-    # Solve for phi (the solution at this lambda)
-    u_lambda = spsolve(A, phi)
+    # Solve for phi (the solution at this lambda) using the noisy image (fn)
+    u_lambda = spsolve(A, lam * fn.flatten())  # Solving for noisy image
 
-    # Reshape the solution back to a 2D grid
+    # Reshape the solution back to 2D grid
     u_lambda_grid = u_lambda.reshape((nx, ny))
 
-    # Store the solutions for later plotting
+    # Store the solution for plotting later
     solutions[lam] = u_lambda_grid
 
-### Plotting the four selected lambda values (smallest, two middle, largest)
-##selected_lambdas = [lambdas[0], lambdas[len(lambdas)//2-1], lambdas[len(lambdas)//2], lambdas[-1]]
-##
-##plt.figure(figsize=(12, 10))
-##
-##for i, lam in enumerate(selected_lambdas, start=1):
-##    plt.subplot(2, 2, i)
-##    plt.imshow(solutions[lam], cmap='gray')
-##    plt.title(f'(λ = {lam})')
-##    plt.axis('off')
-##
-##plt.tight_layout()
-##plt.show()
+    # Compute the standard deviation of the noise
+    sigma_lambda.append(np.linalg.norm(fm - u_lambda_grid) / np.sqrt(nx * ny))
 
-sigma_values = {}
+# Results
+for lam, sig in zip(lambdas, sigma_lambda):
+    print(f"lambda = {lam}, sigma(lambda) = {sig:.6f}")
 
-for lam in lambdas:
-    u_lambda = solutions[lam]
-    # Flatten the images to 1D for correct calculation of the L2 norm
-    u_lambda_flat = u_lambda.flatten()
-    fm_flat = fm.flatten()  # Noiseless image (Shepp-Logan phantom)
-    
-    # Calculate the L2 norm of the difference between the true image and the computed solution
-    diff = u_lambda_flat - fm_flat
-    norm_diff = np.linalg.norm(diff)
-    
-    # Calculate the standard deviation as specified: sigma(lambda) = ||u_mod - u_lambda||_2 / sqrt(N)
-    sigma_lambda = norm_diff / np.sqrt(nx * ny)
-    
-    # Store the value of sigma for this lambda
-    sigma_values[lam] = sigma_lambda
+# Plotting the four selected lambda values (smallest, two middle, largest)
+selected_lambdas = [lambdas[0], lambdas[len(lambdas)//2-1], lambdas[len(lambdas)//2], lambdas[-1]]
 
-# Print the sigma values for each lambda
-for lam, sigma_lambda in sigma_values.items():
-    print(f"λ = {lam}, σ(λ) = {sigma_lambda}")
+plt.figure(figsize=(12, 10))
 
+for i, lam in enumerate(selected_lambdas, start=1):
+    plt.subplot(2, 2, i)
+    plt.imshow(solutions[lam], cmap='gray')
+    plt.title(f'(λ = {lam})')
+    plt.axis('off')
 
+plt.tight_layout()
+plt.show()
+
+plt.figure(figsize=(10, 6))
+plt.plot(lambdas, sigma_lambda, marker='o', linestyle='-', color='b')
+plt.xscale('log')
+plt.yscale('log')
+plt.xlabel(r'$\lambda$', fontsize=12)
+plt.ylabel(r'$\sigma(\lambda)$', fontsize=12)
+plt.title('Standard Deviation of Noise $\sigma(\lambda)$ for Different $\lambda$', fontsize=14)
+plt.grid(True)
+plt.tight_layout()
+plt.show()
 ###########
 
 ### Picard iteration
