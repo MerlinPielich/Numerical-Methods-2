@@ -5,10 +5,9 @@ from scipy.sparse import diags
 from scipy.sparse.linalg import spsolve
 from PIL import Image
 
-
 # Choose the image:
 gif_name = 'SL_simulated.gif'
-# gif_name = 'SL_measured.gif'
+#gif_name = 'SL_measured.gif'
 
 # Time step:
 dt = 1.e-5
@@ -26,123 +25,187 @@ if gif_name == 'SL_simulated.gif':
     np.random.seed(0)
     fn = fm + sigma * np.random.randn(nx, ny)
     # Plot the model image
-##    plt.figure()
-##    plt.title('Noise-free image')
-##    plt.imshow(fm, extent=[0, 1, 0, 1], cmap = 'gray')
-##    plt.axis('square')
-##    plt.axis('off')
-##
-### Plot the noisy image
-##plt.figure()
-##plt.title('Noisy image')
-##plt.imshow(fn, extent=[0, 1, 0, 1], cmap = 'gray')
-##plt.axis('square')
-##plt.axis('off')
-
-##############
-
-# Fidelity parameter values
-lambdas = [1, 10, 100, 1000, 10000, 100000, 1000000, 10000000, 100000000]
-
-# Grid spacing
-h = 1.0 / nx
-
-# Prepare the solution vector (flattened version of the noisy image)
-phi = fn.flatten()
-
-# Store solutions for selected lambdas
-solutions = {}
-
-# Solve for each lambda, compute noise std
-sigma_lambda = []
-
-for lam in lambdas:
-    # Construct the matrix A for the current lambda
-    main_diag = np.zeros(nx * ny)
-    right_diag = np.zeros(nx * ny)
-    left_diag = np.zeros(nx * ny)
-    top_diag = np.zeros(nx * ny)
-    bottom_diag = np.zeros(nx * ny)
-
-    for j in range(ny):
-        for i in range(nx):
-            k = j * nx + i  # 1D index corresponding to (i, j)
-
-            # Diagonal elements (handling interior and boundary points)
-            if 0 < i < nx-1 and 0 < j < ny-1:  # Interior points
-                main_diag[k] = (1 + 1 + 1 + 1) / h**2 + lam
-            elif i == 0 and 0 < j < ny-1:  # Left boundary
-                main_diag[k] = (1 + 1 + 1 + 1) / h**2 + lam
-            elif i == nx-1 and 0 < j < ny-1:  # Right boundary
-                main_diag[k] = (1 + 1 + 1 + 1) / h**2 + lam
-            elif 0 < i < nx-1 and j == 0:  # Bottom boundary
-                main_diag[k] = (1 + 1 + 1 + 1) / h**2 + lam
-            elif 0 < i < nx-1 and j == ny-1:  # Top boundary
-                main_diag[k] = (1 + 1 + 1 + 1) / h**2 + lam
-            elif i == 0 and j == 0:  # Bottom-left corner
-                main_diag[k] = (1 + 1 + 1 + 1) / h**2 + lam
-            elif i == nx-1 and j == 0:  # Bottom-right corner
-                main_diag[k] = (1 + 1 + 1 + 1) / h**2 + lam
-            elif i == 0 and j == ny-1:  # Top-left corner
-                main_diag[k] = (1 + 1 + 1 + 1) / h**2 + lam
-            elif i == nx-1 and j == ny-1:  # Top-right corner
-                main_diag[k] = (1 + 1 + 1 + 1) / h**2 + lam
-
-            # Off-diagonal elements (neighbors)
-            if i < nx-1:
-                right_diag[k] = -1 / h**2
-            if i > 0:
-                left_diag[k] = -1 / h**2
-            if j < ny-1:
-                top_diag[k] = -1 / h**2
-            if j > 0:
-                bottom_diag[k] = -1 / h**2
-
-    # Create the sparse matrix A
-    diagonals = [main_diag, right_diag[1:], left_diag[:-1], top_diag[nx:], bottom_diag[:-nx]]
-    offsets = [0, 1, -1, nx, -nx]
-    A = diags(diagonals, offsets, shape=(nx * ny, nx * ny), format='csr')
-
-    # Solve for phi (the solution at this lambda) using the noisy image (fn)
-    u_lambda = spsolve(A, lam * fn.flatten())  # Solving for noisy image
-
-    # Reshape the solution back to 2D grid
-    u_lambda_grid = u_lambda.reshape((nx, ny))
-
-    # Store the solution for plotting later
-    solutions[lam] = u_lambda_grid
-
-    # Compute the standard deviation of the noise
-    sigma_lambda.append(np.linalg.norm(fm - u_lambda_grid) / np.sqrt(nx * ny))
-
-# Results
-for lam, sig in zip(lambdas, sigma_lambda):
-    print(f"lambda = {lam}, sigma(lambda) = {sig:.6f}")
-
-# Plotting the four selected lambda values (smallest, two middle, largest)
-selected_lambdas = [lambdas[0], lambdas[len(lambdas)//2-1], lambdas[len(lambdas)//2], lambdas[-1]]
-
-plt.figure(figsize=(12, 10))
-
-for i, lam in enumerate(selected_lambdas, start=1):
-    plt.subplot(2, 2, i)
-    plt.imshow(solutions[lam], cmap='gray')
-    plt.title(f'(λ = {lam})')
+    plt.figure()
+    plt.title('Noise-free image')
+    plt.imshow(fm, extent=[0, 1, 0, 1], cmap = 'gray')
+    plt.axis('square')
     plt.axis('off')
 
-plt.tight_layout()
-plt.show()
+# Plot the noisy image
+plt.figure()
+plt.title('Noisy image')
+plt.imshow(fn, extent=[0, 1, 0, 1], cmap = 'gray')
+plt.axis('square')
+plt.axis('off')
 
-plt.figure(figsize=(10, 6))
-plt.plot(lambdas, sigma_lambda, marker='o', linestyle='-', color='b')
-plt.xscale('log')
-plt.yscale('log')
-plt.xlabel(r'$\lambda$', fontsize=12)
-plt.ylabel(r'$\sigma(\lambda)$', fontsize=12)
-plt.title('Standard Deviation of Noise $\sigma(\lambda)$ for Different $\lambda$', fontsize=14)
-plt.grid(True)
-plt.tight_layout()
-plt.show()
+#####################G implementatie
+lambdas = [1, 10, 100, 1000, 10000, 100000, 1000000, 10000000, 100000000]
+h = 1.0 / nx
+##phi = fn.flatten()
+##solutions = {}
+##sigma_lambda = []
+##
+##for lam in lambdas:
+##    main_diag = np.zeros(nx * ny)
+##    right_diag = np.zeros(nx * ny)
+##    left_diag = np.zeros(nx * ny)
+##    top_diag = np.zeros(nx * ny)
+##    bottom_diag = np.zeros(nx * ny)
+##
+##    for j in range(ny):
+##        for i in range(nx):
+##            k = j * nx + i  #(i, j)
+##
+##            #diagonal
+##            if 0 < i < nx-1 and 0 < j < ny-1:  
+##                main_diag[k] = (1 + 1 + 1 + 1) / h**2 + lam
+##            elif i == 0 and 0 < j < ny-1:
+##                main_diag[k] = (1 + 1 + 1 + 1) / h**2 + lam
+##            elif i == nx-1 and 0 < j < ny-1:  
+##                main_diag[k] = (1 + 1 + 1 + 1) / h**2 + lam
+##            elif 0 < i < nx-1 and j == 0:  
+##                main_diag[k] = (1 + 1 + 1 + 1) / h**2 + lam
+##            elif 0 < i < nx-1 and j == ny-1:
+##                main_diag[k] = (1 + 1 + 1 + 1) / h**2 + lam
+##            elif i == 0 and j == 0:
+##                main_diag[k] = (1 + 1 + 1 + 1) / h**2 + lam
+##            elif i == nx-1 and j == 0:  
+##                main_diag[k] = (1 + 1 + 1 + 1) / h**2 + lam
+##            elif i == 0 and j == ny-1:  
+##                main_diag[k] = (1 + 1 + 1 + 1) / h**2 + lam
+##            elif i == nx-1 and j == ny-1:
+##                main_diag[k] = (1 + 1 + 1 + 1) / h**2 + lam
+##
+##            #off-diagonal
+##            if i < nx-1:
+##                right_diag[k] = -1 / h**2
+##            if i > 0:
+##                left_diag[k] = -1 / h**2
+##            if j < ny-1:
+##                top_diag[k] = -1 / h**2
+##            if j > 0:
+##                bottom_diag[k] = -1 / h**2
+##
+##    #create A
+##    diagonals = [main_diag, right_diag[1:], left_diag[:-1], top_diag[nx:], bottom_diag[:-nx]]
+##    offsets = [0, 1, -1, nx, -nx]
+##    A = diags(diagonals, offsets, shape=(nx * ny, nx * ny), format='csr')
+##    u_lambda = spsolve(A, lam * fn.flatten())  #solve noise im
+##    u_lambda_grid = u_lambda.reshape((nx, ny))
+##    solutions[lam] = u_lambda_grid
+##    sigma_lambda.append(np.linalg.norm(fm - u_lambda_grid) / np.sqrt(nx * ny))
+##
+##for lam, sig in zip(lambdas, sigma_lambda):
+##    print(f"lambda = {lam}, sigma(lambda) = {sig:.6f}")
+##
+###Plot 4selected lambda values
+##selected_lambdas = [lambdas[0], lambdas[len(lambdas)//2-1], lambdas[len(lambdas)//2], lambdas[-1]]
+##
+##plt.figure(figsize=(12, 10))
+##
+##for i, lam in enumerate(selected_lambdas, start=1):
+##    plt.subplot(2, 2, i)
+##    plt.imshow(solutions[lam], cmap='gray')
+##    plt.title(f'(λ = {lam})')
+##    plt.axis('off')
+##
+##plt.tight_layout()
+##plt.show()
+##
+##plt.figure(figsize=(10, 6))
+##plt.plot(lambdas, sigma_lambda, marker='o', linestyle='-', color='b')
+##plt.xscale('log')
+##plt.yscale('log')
+##plt.xlabel(r'$\lambda$', fontsize=12)
+##plt.ylabel(r'$\sigma(\lambda)$', fontsize=12)
+##plt.title('Standard Deviation of Noise $\sigma(\lambda)$ for Different $\lambda$', fontsize=14)
+##plt.grid(True)
+##plt.tight_layout()
+##plt.show()
+##########################
+
+lambdas = [1, 10, 100, 1000, 10000, 100000, 1000000, 10000000, 100000000]  # List of lambda values
+
+method = 1
+plt.figure(figsize=(8,6))
+plt.suptitle('Picard iteration')
+sigma = np.zeros(9)
+
+# Picard iteration parameters
+epsilon = 1e-5  # Convergence tolerance
+max_iter = 100  # Maximum number of iterations
+
+# Loop over each value of lambda in lambdas
+for i, lam in enumerate(lambdas):  # Use enumerate to index lambda values directly
+    # Initialize the first guess (u0) as the noisy image
+    u_k = fn.flatten()
+
+    # Picard iteration
+    for k in range(max_iter):
+        # Compute A (matrix for this lambda value)
+        main_diag = np.zeros(nx * ny)
+        right_diag = np.zeros(nx * ny)
+        left_diag = np.zeros(nx * ny)
+        top_diag = np.zeros(nx * ny)
+        bottom_diag = np.zeros(nx * ny)
+
+        for j in range(ny):
+            for i in range(nx):
+                k_idx = j * nx + i  # index for (i, j)
+
+                # Diagonal terms of A
+                if 0 < i < nx-1 and 0 < j < ny-1:  
+                    main_diag[k_idx] = (1 + 1 + 1 + 1) / h**2 + lam
+                else:
+                    main_diag[k_idx] = (1 + 1 + 1 + 1) / h**2 + lam  # Boundary condition for all other cases
+
+                # Off-diagonal terms of A
+                if i < nx-1:
+                    right_diag[k_idx] = -1 / h**2
+                if i > 0:
+                    left_diag[k_idx] = -1 / h**2
+                if j < ny-1:
+                    top_diag[k_idx] = -1 / h**2
+                if j > 0:
+                    bottom_diag[k_idx] = -1 / h**2
+
+        diagonals = [main_diag, right_diag[1:], left_diag[:-1], top_diag[nx:], bottom_diag[:-nx]]
+        offsets = [0, 1, -1, nx, -nx]
+        A = diags(diagonals, offsets, shape=(nx * ny, nx * ny), format='csr')
+
+        # Solve for the next iteration using the matrix A and current solution u_k
+        u_k_next = spsolve(A, lam * fn.flatten())  # Solve A u_k = lambda * fn
+
+        # Check for convergence
+        if np.linalg.norm(u_k_next - u_k) / np.sqrt(nx * ny) < epsilon:
+            break
+
+        # Update u_k for the next iteration
+        u_k = u_k_next
+
+    # Reshape the solution back to a 2D grid
+    u_k_grid = u_k.reshape((nx, ny))
+
+    # Ensure that i stays within the range [0, 8]
+    plt.subplot(3, 3, i+1)  # Create 3x3 grid for subplots
+    plt.title(f'Picard, $\lambda$ = {lam}')
+    plt.imshow(u_k_grid, extent=[0, 1, 0, 1], cmap='gray')
+    plt.axis('square')
+    plt.axis('off')
+
+    # Compute the standard deviation of the difference between the solution and the original (if available)
+    if fm.size > 0:
+        sigma[i] = np.linalg.norm(u_k_grid - fm, ord='fro') / np.sqrt(nx * ny)
+
+# Plot the standard deviation vs fidelity
+if fm.size > 0:
+    plt.figure()
+    plt.title('Standard deviation versus fidelity')
+    plt.plot(range(9), sigma)
+    plt.xlabel('Logarithm Fidelity')
+    plt.ylabel('$\sigma$')
+
+
 ###########
 
 ### Picard iteration
@@ -170,9 +233,9 @@ plt.show()
 ##    plt.plot(range(9), sigma)
 ##    plt.xlabel('Logarithm Fidelity')
 ##    plt.ylabel('$\sigma$')
-##
-##
-##
+
+
+
 ### Explicit Euler
 ##method  = 2
 ##fidelty = 0
