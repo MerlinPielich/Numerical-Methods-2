@@ -155,11 +155,12 @@ method = 1
 plt.figure(figsize=(8,6))
 plt.suptitle('Picard iteration')
 sigma = np.zeros(9)
-for i in range(9):
+lambdas_vol_meth =  np.linspace(0, 8, num = 8)
+for i,ele in enumerate(lambdas_vol_meth):
     fidelity = 10**(i)
     Nx,Ny = fn.shape
     h = 1.0
-    lambda_val = 1/fidelity
+    lambda_val = ele
     c = 1.0  
     # Add your code here. At this moment the filtered image is just a copy of the original image
     A = construct_matrix_A(Nx, Ny, h, lambda_val, c)
@@ -168,7 +169,7 @@ for i in range(9):
     
     
     plt.subplot(3, 3, i+1)
-    plt.title(f'Picard, $\lambda$ = {fidelity}')
+    plt.title(f'Picard, $\lambda$ = {ele}')
     plt.imshow(fs, extent=[0, 1, 0, 1], cmap = 'gray')
     plt.axis('square')
     plt.axis('off')
