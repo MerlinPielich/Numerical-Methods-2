@@ -1,20 +1,19 @@
 import numpy as np
 import matplotlib.pyplot as plt
 from PIL import Image
-from scipy.sparse import diags
+from scipy.sparse import lil_matrix
+from scipy.sparse import csr_matrix
 from scipy.sparse.linalg import spsolve
-from PIL import Image
 
 # Choose the image:
 gif_name = 'SL_simulated.gif'
-#gif_name = 'SL_measured.gif'
+# gif_name = 'SL_measured.gif'
 
 # Time step:
 dt = 1.e-5
 nt = 40
 
 Im = Image.open(gif_name)
-
 fm = np.array([])
 fn = np.array(Im)/255.0
 nx, ny = fn.shape
@@ -38,9 +37,11 @@ plt.imshow(fn, extent=[0, 1, 0, 1], cmap = 'gray')
 plt.axis('square')
 plt.axis('off')
 
-#####################G implementatie
-lambdas = [1, 10, 100, 1000, 10000, 100000, 1000000, 10000000, 100000000]
-h = 1.0 / nx
+
+
+#######################G implementatie
+##lambdas = [1, 10, 100, 1000, 10000, 100000, 1000000, 10000000, 100000000]
+##h = 1.0 / nx
 ##phi = fn.flatten()
 ##solutions = {}
 ##sigma_lambda = []
@@ -111,205 +112,73 @@ h = 1.0 / nx
 ##
 ##plt.tight_layout()
 ##plt.show()
-##
-##plt.figure(figsize=(10, 6))
-##plt.plot(lambdas, sigma_lambda, marker='o', linestyle='-', color='b')
-##plt.xscale('log')
-##plt.yscale('log')
-##plt.xlabel(r'$\lambda$', fontsize=12)
-##plt.ylabel(r'$\sigma(\lambda)$', fontsize=12)
-##plt.title('Standard Deviation of Noise $\sigma(\lambda)$ for Different $\lambda$', fontsize=14)
-##plt.grid(True)
-##plt.tight_layout()
-##plt.show()
-##########################
+##############################
 
-lambdas = [1, 10, 100, 1000, 10000, 100000, 1000000, 10000000, 100000000]  # List of lambda values
 
+# Define grid spacing
+h = 1.0 / (nx -1)
+
+# Picard iteration
 method = 1
 plt.figure(figsize=(8,6))
 plt.suptitle('Picard iteration')
-sigma = np.zeros(9)
+# Picard iteration
+sigma_vals = np.zeros(9)
 
-# Picard iteration parameters
-epsilon = 1e-5  # Convergence tolerance
-max_iter = 100  # Maximum number of iterations
-
-# Loop over each value of lambda in lambdas
-for i, lam in enumerate(lambdas):  # Use enumerate to index lambda values directly
-    # Initialize the first guess (u0) as the noisy image
-    u_k = fn.flatten()
-
-    # Picard iteration
-    for k in range(max_iter):
-        # Compute A (matrix for this lambda value)
-        main_diag = np.zeros(nx * ny)
-        right_diag = np.zeros(nx * ny)
-        left_diag = np.zeros(nx * ny)
-        top_diag = np.zeros(nx * ny)
-        bottom_diag = np.zeros(nx * ny)
-
+for lam_idx in range(9):  # Iterate over 9 lambda values
+    fidelity = 10**(lam_idx)  # Different lambda (fidelity)
+    
+    # Initialize phi and fs
+    phi = fn.copy()  # Start with noisy image
+    fs = fn.copy()
+    
+    for _ in range(nt):
+        A = lil_matrix((nx*ny, nx*ny))
+        b = np.zeros(nx*ny)
+        
+        # Construct the system
         for j in range(ny):
             for i in range(nx):
-                k_idx = j * nx + i  # index for (i, j)
-
-                # Diagonal terms of A
-                if 0 < i < nx-1 and 0 < j < ny-1:  
-                    main_diag[k_idx] = (1 + 1 + 1 + 1) / h**2 + lam
-                else:
-                    main_diag[k_idx] = (1 + 1 + 1 + 1) / h**2 + lam  # Boundary condition for all other cases
-
-                # Off-diagonal terms of A
-                if i < nx-1:
-                    right_diag[k_idx] = -1 / h**2
-                if i > 0:
-                    left_diag[k_idx] = -1 / h**2
-                if j < ny-1:
-                    top_diag[k_idx] = -1 / h**2
-                if j > 0:
-                    bottom_diag[k_idx] = -1 / h**2
-
-        diagonals = [main_diag, right_diag[1:], left_diag[:-1], top_diag[nx:], bottom_diag[:-nx]]
-        offsets = [0, 1, -1, nx, -nx]
-        A = diags(diagonals, offsets, shape=(nx * ny, nx * ny), format='csr')
-
-        # Solve for the next iteration using the matrix A and current solution u_k
-        u_k_next = spsolve(A, lam * fn.flatten())  # Solve A u_k = lambda * fn
-
-        # Check for convergence
-        if np.linalg.norm(u_k_next - u_k) / np.sqrt(nx * ny) < epsilon:
-            break
-
-        # Update u_k for the next iteration
-        u_k = u_k_next
-
-    # Reshape the solution back to a 2D grid
-    u_k_grid = u_k.reshape((nx, ny))
-
-    # Ensure that i stays within the range [0, 8]
-    plt.subplot(3, 3, i+1)  # Create 3x3 grid for subplots
-    plt.title(f'Picard, $\lambda$ = {lam}')
-    plt.imshow(u_k_grid, extent=[0, 1, 0, 1], cmap='gray')
+                k = j * nx + i
+                
+                if 0 < i < nx - 1 and 0 < j < ny - 1:  # Interior points
+                    c_ip_half_j = 1 / (1 + ((phi[i, j] - phi[i-1, j]) / (2*h))**2 + ((phi[i, j+1] - phi[i, j-1]) / (2*h))**2)
+                    c_im_half_j = 1 / (1 + ((phi[i, j] - phi[i+1, j]) / (2*h))**2 + ((phi[i, j+1] - phi[i, j-1]) / (2*h))**2)
+                    c_i_jp_half = 1 / (1 + ((phi[i+1, j] - phi[i-1, j]) / (2*h))**2 + ((phi[i, j+1] - phi[i, j]) / (2*h))**2)
+                    c_i_jm_half = 1 / (1 + ((phi[i+1, j] - phi[i-1, j]) / (2*h))**2 + ((phi[i, j] - phi[i, j-1]) / (2*h))**2)
+                    
+                    A[k, k] = (c_ip_half_j + c_im_half_j + c_i_jp_half + c_i_jm_half) / h**2 + fidelity
+                    A[k, k+1] = -c_ip_half_j / h**2
+                    A[k, k-1] = -c_im_half_j / h**2
+                    A[k, k+nx] = -c_i_jp_half / h**2
+                    A[k, k-nx] = -c_i_jm_half / h**2
+                    b[k] = fidelity * fn[i, j]
+                else:  # Boundary conditions
+                    A[k, k] = 1  # Keep boundary value fixed
+                    b[k] = fn[i, j]  # Set right-hand side to boundary value (noisy image)
+        
+        # Solve the system
+        phi_vec = spsolve(A.tocsr(), b)
+        phi = phi_vec.reshape(nx, ny).T  # Update phi
+    
+    # Plot the result
+    plt.subplot(3, 3, lam_idx + 1)  # Now correctly mapped to 1-9
+    plt.title(f'Picard, $\lambda$ = {fidelity}')
+    plt.imshow(phi, extent=[0, 1, 0, 1], cmap='gray')
     plt.axis('square')
     plt.axis('off')
 
-    # Compute the standard deviation of the difference between the solution and the original (if available)
+    # Calculate sigma for comparison with the noise-free image
     if fm.size > 0:
-        sigma[i] = np.linalg.norm(u_k_grid - fm, ord='fro') / np.sqrt(nx * ny)
-
-# Plot the standard deviation vs fidelity
+        sigma_vals[lam_idx] = np.linalg.norm(phi - fm, ord='fro') / np.sqrt(nx * ny)
+    
 if fm.size > 0:
     plt.figure()
     plt.title('Standard deviation versus fidelity')
-    plt.plot(range(9), sigma)
+    plt.plot(range(9), sigma_vals)
     plt.xlabel('Logarithm Fidelity')
-    plt.ylabel('$\sigma$')
-
-
-###########
-
-### Picard iteration
-##method = 1
-##plt.figure(figsize=(8,6))
-##plt.suptitle('Picard iteration')
-##sigma = np.zeros(9)
-##for i in range(9):
-##    fidelity = 10**(i)
-##    # Add your code here. At this moment the filtered image is just a copy of the original image
-##    fs = fn
-##
-##    plt.subplot(3, 3, i+1)
-##    plt.title(f'Picard, $\lambda$ = {fidelity}')
-##    plt.imshow(fs, extent=[0, 1, 0, 1], cmap = 'gray')
-##    plt.axis('square')
-##    plt.axis('off')
-##
-##    if fm.size > 0:
-##        sigma[i] = np.linalg.norm(fs - fm, ord='fro') / np.sqrt(nx*ny)
-##
-##if fm.size > 0:
-##    plt.figure()
-##    plt.title('Standard deviation versus fidelity')
-##    plt.plot(range(9), sigma)
-##    plt.xlabel('Logarithm Fidelity')
-##    plt.ylabel('$\sigma$')
-
-
-
-### Explicit Euler
-##method  = 2
-##fidelty = 0
-##
-### Add your code here. At this moment the filtered image is just a copy of the original image
-##fs = fn
-##sum_x = np.ones(nt+1) # These you have to calculate
-##err_x = np.ones(nt+1) # These you have to calculate
-##
-### Plot the sum of the average pixel values:
-##t = np.arange(0, (len(sum_x))*dt, dt)
-##plt.figure()
-##plt.plot(t, sum_x, '-x')
-##plt.ticklabel_format(axis="x", style="sci", scilimits=(0,0))
-##plt.title('Sum of pixel values, Explicit Euler')
-##plt.xlabel('Time')
-##plt.xlim(left=0)
-##plt.ylabel('$\sum x/N$')
-##
-##plt.figure()
-##plt.title('Explicit Euler')
-##plt.imshow(fs, extent=[0, 1, 0, 1], cmap = 'gray')
-##plt.axis('square')
-##plt.axis('off')
-##
-##if fm.size > 0 :
-##    plt.figure()
-##    t = np.arange(0, (len(err_x))*dt, dt)
-##    plt.plot(t, err_x, '-x')
-##    plt.ticklabel_format(axis="x", style="sci", scilimits=(0,0))
-##    plt.title('Standard deviation versus time, Explicit Euler')
-##    plt.xlabel('Time')
-##    plt.xlim(left=0)
-##    plt.ylabel('$\sigma$')
-##
-##
-##
-### Improved Euler
-##method = 3;
-##fidelity = 0;
-### Add your code here. At this moment the filtered image is just a copy of the original image
-##fs = fn
-##sum_x = np.ones(nt+1) # These you have to calculate
-##err_x = np.ones(nt+1) # These you have to calcultate
-##
-### Plot the sum of the average pixel values:
-##t = np.arange(0, (len(sum_x))*dt, dt)
-##plt.figure()
-##plt.plot(t, sum_x, '-x')
-##plt.ticklabel_format(axis="x", style="sci", scilimits=(0,0))
-##plt.title('Sum of pixel values, Improved Euler')
-##plt.xlabel('Time')
-##plt.xlim(left=0)
-##plt.ylabel('$\Sigma x/N$')
-##
-##plt.figure()
-##plt.title('Improved Euler')
-##plt.imshow(fs, extent=[0, 1, 0, 1], cmap = 'gray')
-##plt.axis('square')
-##plt.axis('off')
-##
-##if fm.size > 0 :
-##    plt.figure()
-##    t = np.arange(0, (len(err_x))*dt, dt)
-##    plt.plot(t, err_x, '-x')
-##    plt.ticklabel_format(axis="x", style="sci", scilimits=(0,0))
-##    plt.title('Standard deviation versus time, Improved Euler')
-##    plt.xlabel('Time')
-##    plt.xlim(left=0)
-##    plt.ylabel('$\sigma$')
-##
-##plt.show()
-
-
+    plt.ylabel('$\\sigma$')
+plt.show()
 
 
 
