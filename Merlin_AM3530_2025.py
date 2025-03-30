@@ -531,7 +531,7 @@ def smooth_image_picard(image_noisy, lambda_val, K, epsilon=1e-5, max_iter=100):
     # 1. Vectorize the images
     u0 = image_noisy.flatten()  # Use the NOISY image for u0
     u_k = image_noisy.flatten()   # Use the NOISY image as initial guess
-
+    sigma = np.zeros(9)
     # Picard iteration
     for iter_num in range(max_iter):
         # Calculate diffusion coefficients based on current solution
@@ -546,6 +546,7 @@ def smooth_image_picard(image_noisy, lambda_val, K, epsilon=1e-5, max_iter=100):
 
         # 4. Solve the linear system
         u_kp1 = spsolve(A, f)
+        
 
         # Check for convergence
         error = np.linalg.norm(u_kp1 - u_k) / np.sqrt(N)
@@ -553,6 +554,8 @@ def smooth_image_picard(image_noisy, lambda_val, K, epsilon=1e-5, max_iter=100):
         if error < epsilon:
             print(f"Converged in {iter_num+1} iterations.")
             break
+        
+
 
         # Update solution
         u_k = u_kp1
@@ -562,8 +565,11 @@ def smooth_image_picard(image_noisy, lambda_val, K, epsilon=1e-5, max_iter=100):
 
     # **CLIP THE VALUES TO [0, 1]**
     smoothed_image = np.clip(smoothed_image, 0, 1)
-
-    return smoothed_image
+    
+    if fm.size > 0:
+        sigma[iter_num] = np.linalg.norm(smoothed_image - image_noisy, ord='fro') / np.sqrt(nx*ny)
+    
+    return smoothed_image , sigma
 
 # Load the images
 Im = Image.open('SL_simulated.gif')
@@ -589,7 +595,7 @@ Ks = [5] # Experiment with K values
 
 for lamb in lambdas:
     for K in Ks:
-        smoothed_image = smooth_image_picard(fn, lambda_val=lamb, K=K) # Pass both images
+        smoothed_image, sigma  = smooth_image_picard(fn, lambda_val=lamb, K=K) # Pass both images
         plt.subplot(3, 3, lambdas.index(lamb)+1)
         plt.title(f'L={lamb}, K={K}')
         plt.imshow(smoothed_image, extent=[0, 1, 0, 1], cmap = 'gray')
@@ -597,3 +603,18 @@ for lamb in lambdas:
         plt.axis('off')
 
 plt.show()
+
+
+
+
+if fm.size > 0:
+    plt.figure()
+    plt.title('Standard deviation versus fidelity')
+    plt.plot(range(9), sigma)
+    plt.xlabel('Logarithm Fidelity')
+    plt.ylabel('$\sigma$')
+    
+    
+    
+    
+    
