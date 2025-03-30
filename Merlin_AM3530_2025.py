@@ -510,7 +510,7 @@ def construct_sparse_matrix(Nx, Ny, h, lambda_val, c_east, c_west, c_north, c_so
     A = csr_matrix((data, (row, col)), shape=(N, N))
     return A
 
-def smooth_image_picard(image_noisy, lambda_val, K, epsilon=1e-5, max_iter=100):
+def smooth_image_picard(image,image_noisy, lambda_val, K, epsilon=1e-5, max_iter=100):
     """
     Smooths an image using anisotropic diffusion with Picard iteration.
 
@@ -524,6 +524,7 @@ def smooth_image_picard(image_noisy, lambda_val, K, epsilon=1e-5, max_iter=100):
     Returns:
         np.array: The smoothed image (2D numpy array).
     """
+    
     Ny, Nx = image_noisy.shape
     N = Nx * Ny
     h = 1  # Assuming unit pixel spacing
@@ -531,7 +532,6 @@ def smooth_image_picard(image_noisy, lambda_val, K, epsilon=1e-5, max_iter=100):
     # 1. Vectorize the images
     u0 = image_noisy.flatten()  # Use the NOISY image for u0
     u_k = image_noisy.flatten()   # Use the NOISY image as initial guess
-    sigma = np.zeros(9)
     # Picard iteration
     for iter_num in range(max_iter):
         # Calculate diffusion coefficients based on current solution
@@ -563,13 +563,15 @@ def smooth_image_picard(image_noisy, lambda_val, K, epsilon=1e-5, max_iter=100):
     # 5. Reshape the solution
     smoothed_image = u_k.reshape((Ny, Nx))
 
-    # **CLIP THE VALUES TO [0, 1]**
+
     smoothed_image = np.clip(smoothed_image, 0, 1)
     
     if fm.size > 0:
-        sigma[iter_num] = np.linalg.norm(smoothed_image - image_noisy, ord='fro') / np.sqrt(nx*ny)
+        sigma = np.linalg.norm(image - smoothed_image, ord='fro') / np.sqrt(nx*ny)
     
     return smoothed_image , sigma
+
+
 
 # Load the images
 Im = Image.open('SL_simulated.gif')
@@ -592,10 +594,11 @@ plt.show()
 
 lambdas = [1, 10, 100, 1000, 10000, 100000, 1000000, 10000000, 100000000]
 Ks = [5] # Experiment with K values
-
+sigmas = np.zeros(len(lambdas))
 for lamb in lambdas:
     for K in Ks:
-        smoothed_image, sigma  = smooth_image_picard(fn, lambda_val=lamb, K=K) # Pass both images
+        smoothed_image, cur_sigma  = smooth_image_picard(fm,fn, lambda_val=lamb, K=K) # Pass both images
+        sigmas[lambdas.index(lamb)] = cur_sigma
         plt.subplot(3, 3, lambdas.index(lamb)+1)
         plt.title(f'L={lamb}, K={K}')
         plt.imshow(smoothed_image, extent=[0, 1, 0, 1], cmap = 'gray')
@@ -610,7 +613,7 @@ plt.show()
 if fm.size > 0:
     plt.figure()
     plt.title('Standard deviation versus fidelity')
-    plt.plot(range(9), sigma)
+    plt.plot(range(9), sigmas)
     plt.xlabel('Logarithm Fidelity')
     plt.ylabel('$\sigma$')
     
