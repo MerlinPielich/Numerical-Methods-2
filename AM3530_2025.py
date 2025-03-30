@@ -114,73 +114,81 @@ plt.axis('off')
 ##plt.show()
 ##############################
 
-
 # Define grid spacing
-h = 1.0 / (nx -1)
+h = 1.0 / (nx - 1)
 
 # Picard iteration
-method = 1
-plt.figure(figsize=(8,6))
+plt.figure(figsize=(8, 6))
 plt.suptitle('Picard iteration')
-# Picard iteration
 sigma_vals = np.zeros(9)
 
-for lam_idx in range(9):  # Iterate over 9 lambda values
-    fidelity = 10**(lam_idx)  # Different lambda (fidelity)
+for lam_idx in range(9):  # Iterate over lambda values
+    fidelity = 10**lam_idx  # Fidelity parameter
     
-    # Initialize phi and fs
-    phi = fn.copy()  # Start with noisy image
-    fs = fn.copy()
+    # Initialize phi
+    phi = fn.copy()
     
-    for _ in range(nt):
-        A = lil_matrix((nx*ny, nx*ny))
-        b = np.zeros(nx*ny)
-        
-        # Construct the system
+    # Picard iteration parameters
+    eps = 1e-5
+    max_iter = 100
+    N = nx * ny
+
+    for k in range(max_iter):
+        A = lil_matrix((nx * ny, nx * ny))
+        b = np.zeros(nx * ny)
+
         for j in range(ny):
             for i in range(nx):
-                k = j * nx + i
+                k_index = j * nx + i  # Ensure unique indexing
                 
                 if 0 < i < nx - 1 and 0 < j < ny - 1:  # Interior points
                     c_ip_half_j = 1 / (1 + ((phi[i, j] - phi[i-1, j]) / (2*h))**2 + ((phi[i, j+1] - phi[i, j-1]) / (2*h))**2)
                     c_im_half_j = 1 / (1 + ((phi[i, j] - phi[i+1, j]) / (2*h))**2 + ((phi[i, j+1] - phi[i, j-1]) / (2*h))**2)
                     c_i_jp_half = 1 / (1 + ((phi[i+1, j] - phi[i-1, j]) / (2*h))**2 + ((phi[i, j+1] - phi[i, j]) / (2*h))**2)
                     c_i_jm_half = 1 / (1 + ((phi[i+1, j] - phi[i-1, j]) / (2*h))**2 + ((phi[i, j] - phi[i, j-1]) / (2*h))**2)
-                    
-                    A[k, k] = (c_ip_half_j + c_im_half_j + c_i_jp_half + c_i_jm_half) / h**2 + fidelity
-                    A[k, k+1] = -c_ip_half_j / h**2
-                    A[k, k-1] = -c_im_half_j / h**2
-                    A[k, k+nx] = -c_i_jp_half / h**2
-                    A[k, k-nx] = -c_i_jm_half / h**2
-                    b[k] = fidelity * fn[i, j]
+
+                    A[k_index, k_index] = (c_ip_half_j + c_im_half_j + c_i_jp_half + c_i_jm_half) / h**2 + fidelity
+                    A[k_index, k_index + 1] = -c_ip_half_j / h**2
+                    A[k_index, k_index - 1] = -c_im_half_j / h**2
+                    A[k_index, k_index + nx] = -c_i_jp_half / h**2
+                    A[k_index, k_index - nx] = -c_i_jm_half / h**2
+                    b[k_index] = fidelity * fn[i, j]
                 else:  # Boundary conditions
-                    A[k, k] = 1  # Keep boundary value fixed
-                    b[k] = fn[i, j]  # Set right-hand side to boundary value (noisy image)
-        
+                    A[k_index, k_index] = 1  
+                    b[k_index] = fn[i, j]
+
         # Solve the system
-        phi_vec = spsolve(A.tocsr(), b)
-        phi = phi_vec.reshape(nx, ny).T  # Update phi
-    
+        phi_new_vec = spsolve(A.tocsr(), b)
+        phi_new = phi_new_vec.reshape(nx, ny).T  # Ensure correct orientation
+        
+        # Check stopping condition
+        error = np.linalg.norm(phi_new - phi, ord='fro') / np.sqrt(N)
+        if error < eps:
+            print(f"Converged for λ={fidelity} in {k+1} iterations (error {error:.2e})")
+            break
+        
+        phi = phi_new  # Update phi for next iteration
+
+    # Store the final filtered image
+    fs = phi
+
     # Plot the result
-    plt.subplot(3, 3, lam_idx + 1)  # Now correctly mapped to 1-9
-    plt.title(f'Picard, $\lambda$ = {fidelity}')
-    plt.imshow(phi, extent=[0, 1, 0, 1], cmap='gray')
+    plt.subplot(3, 3, lam_idx+1)
+    plt.title(f'Picard, $\\lambda$ = {fidelity}')
+    plt.imshow(fs, extent=[0, 1, 0, 1], cmap='gray')
     plt.axis('square')
     plt.axis('off')
 
-    # Calculate sigma for comparison with the noise-free image
+    # Compute standard deviation if the original image is available
     if fm.size > 0:
-        sigma_vals[lam_idx] = np.linalg.norm(phi - fm, ord='fro') / np.sqrt(nx * ny)
-    
+        sigma_vals[lam_idx] = np.linalg.norm(fs - fm, ord='fro') / np.sqrt(nx * ny)
+
+# Plot standard deviation vs fidelity
 if fm.size > 0:
     plt.figure()
     plt.title('Standard deviation versus fidelity')
-    plt.plot(range(9), sigma_vals)
+    plt.plot(range(9), sigma_vals, marker='o')
     plt.xlabel('Logarithm Fidelity')
     plt.ylabel('$\\sigma$')
+
 plt.show()
-
-
-
-
-
