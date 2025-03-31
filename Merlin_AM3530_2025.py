@@ -527,7 +527,7 @@ def smooth_image_picard(image,image_noisy, lambda_val, K, epsilon=1e-5, max_iter
     
     Ny, Nx = image_noisy.shape
     N = Nx * Ny
-    h = 1  # Assuming unit pixel spacing
+    h = 1/(Nx-1)  # Assuming unit pixel spacing
 
     # 1. Vectorize the images
     u0 = image_noisy.flatten()  # Use the NOISY image for u0
@@ -545,7 +545,7 @@ def smooth_image_picard(image,image_noisy, lambda_val, K, epsilon=1e-5, max_iter
         f = lambda_val * (h**2) * u_k
 
         # 4. Solve the linear system
-        u_kp1 = spsolve(A, f)
+        u_kp1 = spsolve(-A, f)
         
 
         # Check for convergence
