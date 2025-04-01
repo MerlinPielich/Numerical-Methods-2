@@ -3,7 +3,12 @@ import scipy.sparse as sparse
 import scipy.sparse.linalg as splinalg
 from PIL import Image
 import matplotlib.pyplot as plt
+# caching tool
+from joblib import Memory
+from joblib import Parallel, delayed
 
+# Initialize joblib Memory cache
+memory = Memory(location='g:\\GitHub\\Numerical-Methods-2\\joblib_cache', verbose=0)
 
 def implicit_euler_anisotropic_diffusion(phi0, lambda_val, K, h, dt, n_steps, c_const=False):
     """
@@ -35,10 +40,10 @@ def implicit_euler_anisotropic_diffusion(phi0, lambda_val, K, h, dt, n_steps, c_
         if c_const:
             c = np.ones_like(phi)
         else:
-            c = calculate_diffusion_coefficient(phi, K, h)
+            c = None
 
         # 2. Construct the Matrix A(phi)
-        A,b = construct_matrix_A(phi, phi0 , c , lambda_val, h, nx, ny,dt)
+        A,b = construct_matrix_A(phi, phi0 , c , lambda_val, h, nx, ny,dt, K)
 
         # 3. Construct the right-hand side vector f
         # f = phi.flatten() + dt * lambda_val * phi0.flatten()  # Correct RHS
@@ -54,66 +59,71 @@ def implicit_euler_anisotropic_diffusion(phi0, lambda_val, K, h, dt, n_steps, c_
 
     return phi, summed_per_time, error_per_time
 
-
-def calculate_diffusion_coefficient(phi, K, h):
-    """Calculates the diffusion coefficient c based on the gradient magnitude."""
-    nx, ny = phi.shape
-    c = np.zeros_like(phi)
-
-    # Calculate gradient using central differences, handling boundaries
-    phi_x = np.zeros_like(phi)
-    phi_y = np.zeros_like(phi)
-
-    # Central differences for internal points
-    phi_x[:, 1:-1] = (phi[:, 2:] - phi[:, :-2]) / (2 * h)
-    phi_y[1:-1, :] = (phi[2:, :] - phi[:-2, :]) / (2 * h)
-
-    # Neumann boundary conditions: du/dn = 0
-    # Use one-sided differences consistent with the boundary condition
-    phi_x[:, 0] = (phi[:, 1] - phi[:, 0]) / h  # Left boundary
-    phi_x[:, -1] = (phi[:, -1] - phi[:, -2]) / h  # Right boundary
-    phi_y[0, :] = (phi[1, :] - phi[0, :]) / h  # Top boundary
-    phi_y[-1, :] = (phi[-1, :] - phi[-2, :]) / h  # Bottom boundary
-
-    G = np.sqrt(phi_x**2 + phi_y**2)
-    c = 1 / (1 + (G / K)**2)
-    return c
-
-
-def construct_matrix_A(phi,phi0, c, lambda_val, h, nx, ny,dt):
-    """Constructs the sparse matrix A using FVM discretization with Neumann BC."""
+# Replace the previous caching decorator with joblib's memory.cache
+@memory.cache
+def construct_matrix_A(phi, phi0, c_in, lambda_val, h, nx, ny, dt, K):
     N = nx * ny
     b = np.zeros(N)
     A = sparse.lil_matrix((N, N))
 
+    # Helper function to compute diffusion coefficient at a point (i,j)
+    def compute_c(i, j):
+        if c_in is not None:
+            return c_in[i, j]
+        # Compute horizontal gradient
+        if j == 0:
+            gx = (phi[i, j + 1] - phi[i, j]) / h
+        elif j == ny - 1:
+            gx = (phi[i, j] - phi[i, j - 1]) / h
+        else:
+            gx = (phi[i, j + 1] - phi[i, j - 1]) / (2 * h)
+        # Compute vertical gradient
+        if i == 0:
+            gy = (phi[i + 1, j] - phi[i, j]) / h
+        elif i == nx - 1:
+            gy = (phi[i, j] - phi[i - 1, j]) / h
+        else:
+            gy = (phi[i + 1, j] - phi[i - 1, j]) / (2 * h)
+        G = np.sqrt(gx**2 + gy**2)
+        return 1 / (1 + (G / K) ** 2)
+
+    # Loop over each grid cell
     for i in range(nx):
         for j in range(ny):
-            k = j * nx + i  # 1D index
-
-
-            # Diffusion coefficients at cell faces (averaging)
-            c_east = (c[i, j] + c[min(i + 1, nx - 1), j]) / 2
-            c_west = (c[i, j] + c[max(i - 1, 0), j]) / 2
-            c_north = (c[i, j] + c[i, min(j + 1, ny - 1)]) / 2
-            c_south = (c[i, j] + c[i, max(j - 1, 0)]) / 2
+            k = i * ny + j  # 1D index (row-major order)
+            c_center = compute_c(i, j)
+            # Compute neighbor coefficients by averaging with current pixel
+            if i < nx - 1:
+                c_south = (c_center + compute_c(i + 1, j)) / 2
+            else:
+                c_south = c_center
+            if i > 0:
+                c_north = (c_center + compute_c(i - 1, j)) / 2
+            else:
+                c_north = c_center
+            if j < ny - 1:
+                c_east = (c_center + compute_c(i, j + 1)) / 2
+            else:
+                c_east = c_center
+            if j > 0:
+                c_west = (c_center + compute_c(i, j - 1)) / 2
+            else:
+                c_west = c_center
 
             # Diagonal element
-            A[k, k] = (1 + dt * lambda_val) +  dt * (c_east + c_west + c_north + c_south) / h**2 
+            A[k, k] = (1 + dt * lambda_val) + dt * (c_east + c_west + c_north + c_south) / h**2
+            # Off-diagonal elements
+            if i < nx - 1:  # South neighbor
+                A[k, k + ny] = -dt * c_south / h**2
+            if i > 0:  # North neighbor
+                A[k, k - ny] = -dt * c_north / h**2
+            if j < ny - 1:  # East neighbor
+                A[k, k + 1] = -dt * c_east / h**2
+            if j > 0:  # West neighbor
+                A[k, k - 1] = -dt * c_west / h**2
 
-            # Off-diagonal elements (neighbors)
-            if i < nx - 1:  # East neighbor
-                A[k, k + 1] = -dt*c_east / h**2
-            if i > 0:  # West neighbor
-                A[k, k - 1] = -dt*c_west / h**2
-            if j < ny - 1:  # North neighbor
-                A[k, k + nx] = -dt*c_north / h**2
-            if j > 0:  # South neighbor
-                A[k, k - nx] = -dt* c_south / h**2
-                
-            b[k] = phi[i,j] + dt * lambda_val * phi0[i,j]  # Correct RHS
-                
-            
-    
+            b[k] = phi[i, j] + dt * lambda_val * phi0[i, j]  # Correct RHS
+
     if A is None or b is None:
         raise ValueError("Matrix A or vector b is not properly constructed.")
     return A.tocsc(), b  # Convert to CSC format
@@ -141,13 +151,13 @@ if __name__ == '__main__':
     phi0 = fn.copy()  # Initial image (noisy)
 
     # Set parameters
-    lambda_val = 10000
+    lambda_val = 2245.5709610369454
     K = 5
     h = 1 / (nx - 1)  # Grid spacing
 
     # Choose a suitable dt
-    dt = 1e-5  # Larger dt for stationary solution
-    n_steps = 40  # Adjust n_steps accordingly
+    dt =  1.0941925152053495e-06  # Larger dt for stationary solution
+    n_steps = 500  # Adjust n_steps accordingly
 
     # Apply anisotropic diffusion filtering
     phi_filtered, summed_per_time, error_per_time = implicit_euler_anisotropic_diffusion(
@@ -213,13 +223,4 @@ if __name__ == '__main__':
         plt.ylabel('σ')
         plt.legend()
         plt.show()
-        
-    # Test diffusioin coefficient calculation
-    c_test = calculate_diffusion_coefficient(phi0, K, h)
-    plt.figure()
-    plt.imshow(c_test, cmap='gray')
-    plt.title('Diffusion Coefficient')
-    plt.axis('off')
-    plt.show()
-    
-    print(c_test.shape)
+
